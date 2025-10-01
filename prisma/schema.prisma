@@ -1,0 +1,66 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Note that some adapters may set a maximum length for the String type by default, please ensure your strings are long
+// enough when changing adapters.
+// See https://www.prisma.io/docs/orm/reference/prisma-schema-reference#string for more information
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Session {
+  id             String   @id
+  shop           String   @unique
+  state          String
+  isOnline       Boolean  @default(false)
+  scope          String?
+  expires        DateTime?
+  accessToken    String
+  userId         Int?
+  firstName      String?
+  lastName       String?
+  email          String?
+  accountOwner   Boolean   @default(false)
+  locale         String?
+  collaborator   Boolean?  @default(false)
+  emailVerified  Boolean?  @default(false)
+
+  // Relationships
+  discountSettings DiscountSettings[]
+}
+
+model DiscountSettings {
+  id            Int       @id @default(autoincrement())
+  shop          String
+  bundleName    String
+  discountName  String
+  productId    String   
+  discountLogic Json       // flexible JSON (quantity break, rules, etc.)
+  startDate     DateTime
+  endDate       DateTime?
+
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  // Relationships
+  session       Session    @relation(fields: [shop], references: [shop], onDelete: Cascade)
+  widgetSettings WidgetSettings[]
+}
+
+model WidgetSettings {
+  id          Int       @id @default(autoincrement())
+  discountId  Int
+  title       String     @db.VarChar(255)
+  status      Boolean    @default(false)
+  settings    String     // widget-specific JSON/settings
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  // Relationships
+  discount    DiscountSettings @relation(fields: [discountId], references: [id], onDelete: Cascade)
+}

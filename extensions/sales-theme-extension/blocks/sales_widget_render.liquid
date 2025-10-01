@@ -1,0 +1,10 @@
+{% render "sales_widget" %}    
+<script src="{{ 'sales_widget.js' | asset_url }}" defer></script>
+
+<div class="pv-sales-block"></div>
+{% schema %}
+{
+  "name": "Sales Widget",
+  "target": "section"
+}
+{% endschema %}
