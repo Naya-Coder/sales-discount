@@ -1,8 +1,37 @@
-query CartTransformRunInput {
+query RunInput {
   cart {
     lines {
       id
       quantity
+      merchandise {
+        __typename
+        ... on ProductVariant {
+          id
+          title
+          product {
+            id
+            title
+          }
+        }
+      }
+      giftProduct: attribute(key: "_giftProduct") {
+        key
+        value
+      }
+      variantId: attribute(key: "_variant-id") {
+        key
+        value
+      }
+      packQuantity: attribute(key: "_quantity") {
+        key
+        value
+      }
+      cost {
+        amountPerQuantity {
+          amount
+        }
+      }
     }
   }
+  presentmentCurrencyRate
 }

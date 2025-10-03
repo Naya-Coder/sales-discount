@@ -3,7 +3,7 @@ import { Form, useNavigation, useNavigate, useActionData, useLoaderData } from "
 import { Page, Card, TextField, Button, InlineStack, Text, BlockStack, RadioButton, Collapsible, Select, Banner } from "@shopify/polaris";
 import { ProductPicker } from "../components/ProductPicker/ProductPicker";
 import { createAutomaticDiscount } from "../models/discounts.server";
-import { createDiscountSetting, createWidgetSettings } from "../models/db.prisma";
+import { createDiscountSetting, createWidgetSettings } from "../models/db.prisma.server";
 import { authenticate } from "../shopify.server";
 import { LoaderFunctionArgs, ActionFunctionArgs, redirect, json } from "@remix-run/node";
 import { ChevronDownIcon, ChevronUpIcon, DeleteIcon, PlusIcon, DragHandleIcon, ArrowLeftIcon } from "@shopify/polaris-icons";
@@ -39,6 +39,7 @@ interface AutomaticAppDiscountInput {
 
 interface DiscountPayload {
   bundleName: string;
+  template: string;
   discountName: string;
   productIds: string[];
   collectionIds: string[];
@@ -110,6 +111,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
   const widget = await createWidgetSettings({
     shop: session.shop,
     title: discount.widgetSettings?.title || discount.bundleName,
+    template: discount.template || "quantity-breaks",
     status: true,
     settings: discount.widgetSettings?.settings || {},
   });
@@ -167,6 +169,7 @@ export default function VolumeNew() {
   const [styleOpen, setStyleOpen] = useState(true);
   const [discountOpen, setDiscountOpen] = useState(false);
   const [name, setName] = useState<string>("Bundle 1");
+  const [template, setTemplate] = useState<string>("quantity-breaks");
   const [discountTitle, setDiscountTitle] = useState<string>("");
   const [blockTitle, setBlockTitle] = useState<string>("End of Sale");
 
@@ -310,14 +313,27 @@ export default function VolumeNew() {
 
   // Prepare discount payload for submission
   const discountFormJson = useMemo(() => {
-    const productIds = visibility === 'SPECIFIC_PRODUCTS' || visibility === 'ALL_PRODUCTS_NOT_SOME'
-      ? selectedProducts.map(p => p.id)
-      : [];
+    // Clear conflicting data when visibility changes
+    let productIds: string[] = [];
+    let collectionIds: string[] = [];
 
-    const collectionIds = visibility === "SPECIFIC_COLLECTIONS" ? selectedCollections.map(c => c.id) : [];
+    if (visibility === 'SPECIFIC_PRODUCTS' || visibility === 'ALL_PRODUCTS_NOT_SOME') {
+      // Product-based visibility: store productIds, clear collectionIds
+      productIds = selectedProducts.map(p => p.id);
+      collectionIds = []; // Clear collections when using products
+    } else if (visibility === 'ALL_PRODUCTS') {
+      // All products: no specific products, clear collections
+      productIds = [];
+      collectionIds = []; // Clear collections for all products
+    } else if (visibility === "SPECIFIC_COLLECTIONS") {
+      // Collection-based visibility: store collectionIds, clear productIds
+      collectionIds = selectedCollections.map(c => c.id);
+      productIds = []; // Clear products when using collections
+    }
 
     const payload: DiscountPayload = {
       bundleName: name,
+      template: template,
       discountName: discountTitle || name,
       productIds,
       collectionIds,
@@ -333,7 +349,7 @@ export default function VolumeNew() {
     };
 
     return JSON.stringify(payload);
-  }, [name, discountTitle, visibility, selectedProducts, metafieldOverride, blockTitle, widgetSettingsJson]);
+  }, [name, template, discountTitle, visibility, selectedProducts, selectedCollections, metafieldOverride, blockTitle, widgetSettingsJson]);
 
   // Add/remove bar functions
   const addBar = useCallback(() => {
@@ -687,6 +703,17 @@ export default function VolumeNew() {
                     value={name}
                     onChange={(value: string) => setName(value)}
                     autoComplete="off"
+                  />
+                </div>
+                <div style={{ marginTop: 5 }}>
+                  <Select
+                    label="Template Type"
+                    options={[
+                      { label: "Quantity Breaks", value: "quantity-breaks" },
+                      { label: "Buy X Get Y", value: "bxgy" },
+                    ]}
+                    value={template}
+                    onChange={(value: string) => setTemplate(value)}
                   />
                 </div>
                 <div style={{ marginTop: 5 }}>
