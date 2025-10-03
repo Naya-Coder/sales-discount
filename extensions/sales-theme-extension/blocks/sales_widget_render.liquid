@@ -1,6 +1,6 @@
-{% render "sales_widget" %}    
-<script src="{{ 'sales_widget.js' | asset_url }}" defer></script>
-
+{% render "sales_widget" %}
+{{ 'sales_widget.css' | asset_url | stylesheet_tag }}
+{{ 'sales_widget.js' | asset_url | script_tag }}
 <div class="pv-sales-block"></div>
 {% schema %}
 {

@@ -1,6 +1,6 @@
 import { authenticate } from "../shopify.server";
 import { useLoaderData } from "@remix-run/react";
-import {getWidgetSettingsByShopAndId} from "../models/db.prisma"
+import {getWidgetSettingsByShopAndId} from "../models/db.prisma.server"
 import type {LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/react";
 

@@ -38,6 +38,7 @@ model Widget {
   id        Int       @id @default(autoincrement())
   shop      String
   title     String
+  template  String    @default("quantity-breaks") // template type: quantity-breaks, bxgy, etc.
   status    Boolean    @default(false)
   settings  Json       // widget-specific settings
   createdAt DateTime   @default(now())

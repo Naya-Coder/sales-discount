@@ -37,7 +37,6 @@ export function cartLinesDiscountsGenerateRun(input) {
       // Determine scope
       const excluded = excludeProductIds.includes(productId);
       const inScopeByAll = all && !excluded;
-      console.log(inScopeByAll,'inScopeByAll');
       
       const inScopeByProduct = productIds.includes(productId) && !excluded;
       const inScopeByCollection = collectionIds.length > 0 && line.merchandise.product.inAnyCollection && !excluded;
