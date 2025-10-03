@@ -1,33 +1,73 @@
 import prisma from "../db.server"
 
+// Create a new widget for the shop
+export async function createWidgetSettings({
+  shop,
+  title,
+  status,
+  settings,
+}: {
+  shop: string;
+  title: string;
+  status: boolean;
+  settings: any;
+}) {
+  // Always create a new widget (no update)
+  const widget = await prisma.widget.create({
+    data: {
+      shop,
+      title,
+      status,
+      settings,
+    },
+  });
+
+  return widget;
+}
+
 export async function createDiscountSetting(
-  data: {
+  {
+    widgetId,
+    bundleName,
+    discountName,
+    visibility,
+    productIds,
+    collectionIds,
+    discountLogic,
+    startDate,
+    endDate,
+  }: {
+    widgetId: number;
     bundleName: string;
     discountName: string;
+    visibility:string;
     productIds: string[];
-    discountLogic: object;
+    collectionIds: string[],
+    discountLogic: any;
     startDate: Date;
     endDate?: Date;
-  }, shop: string) {
-  const { bundleName, discountName, productIds, discountLogic, startDate, endDate } = data;
-
-  const ids = (productIds && productIds.length > 0) ? productIds : ["ALL_PRODUCTS"];
-
-  return prisma.$transaction(
-    ids.map((pid) =>
+  }
+) {
+  // Create discount rows for each product (or ALL_PRODUCTS if empty)
+  const discountRows = await Promise.all(
+    (productIds.length ? productIds : [null]).map((productId) =>
       prisma.discountSettings.create({
         data: {
-          shop,
+          widgetId, // ✅ directly link widget
           bundleName,
           discountName,
-          productId: pid,             // one row per product (or sentinel for all)
           discountLogic,
+          productIds: productId ? [productId] : [],
+          collectionIds : collectionIds ? collectionIds : [],
+          appliesTo: visibility,
           startDate,
-          endDate: endDate || null,
+          endDate,
         },
       })
     )
   );
+
+  return discountRows;
 }
 
 export async function getDiscountSettingsByShop(shop: string) {
@@ -37,10 +77,12 @@ export async function getDiscountSettingsByShop(shop: string) {
 }
 
 export async function getWidgetSettingsByShop(shop: string) {
-  return prisma.discountSettings.findMany({
-    where: { shop },
+  return await prisma.widget.findMany({
+    where: {
+      shop, // shorthand for shop: shop
+    },
     include: {
-      widgetSettings: true, // include related discount settings
+      discounts: true, // include all DiscountSettings linked to this widget
     },
   });
 }
@@ -56,27 +98,7 @@ export async function getWidgetSettingsByShopAndId(shop: string, id: string) {
   });
 }
 
-// Create widget settings for one or more discount setting rows
-export async function createWidgetSettings(params: {
-  items: Array<{
-    discountId: number;
-    title: string;
-    status?: boolean;
-    settings: string; // JSON string
-  }>;
-}) {
-  const { items } = params;
-  if (!items.length) return [];
-  return prisma.$transaction(
-    items.map((item) =>
-      prisma.widgetSettings.create({
-        data: {
-          discountId: item.discountId,
-          title: item.title,
-          status: item.status ?? false,
-          settings: item.settings,
-        },
-      })
-    )
-  );
+export async function deleteDiscountSettings(shop:string, id:string){
+  // return prisma.discountSettings.
+  return 123;
 }

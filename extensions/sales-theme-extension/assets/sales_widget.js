@@ -1,40 +1,33 @@
 document.addEventListener("DOMContentLoaded", function () {
-    console.log(PRODUCT_ID)
-    console.log(HANDLE)
+    // const rawPrice = PRODUCT_PRICE; // e.g., "41,999.00"
+    // const priceNumber = Number(String(rawPrice).replace(/,/g, ''));
+    const target = document.querySelector('#pv-sales-block') || document.querySelector('.pv-sales-block');
+    if (!target) return;
 
+    showSkeleton(target, 2); // show 2 placeholder bars
 
     fetch(`/apps/discount?id=${PRODUCT_ID}`, {
         method: "GET",
         headers: { Accept: "application/json" },
     })
-        .then(response => {
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            return response.json(); // Or .text(), .blob(), etc., depending on the content type
-        })
+        .then(res => res.json())
         .then(data => {
-            // Handle both shapes: single object or array
             const record = Array.isArray(data) ? data[0] : data;
-            console.log(record,'record in sales_widget.js');
+            console.log(record);
             
-            if (!record || !record?.widgetSettings) return;
-            
-            const settings = JSON.parse(record?.widgetSettings[0]?.widgetSettings[0]?.settings);
-
-            const target =
-                document.querySelector('#pv-sales-block') ||
-                document.querySelector('.pv-sales-block');
-
-            if (!target) {
-                console.warn('pv-sales-block container not found');
+            if (record && record?.widgetSettings.length == 0) {
+                const target = document.querySelector('#pv-sales-block') || document.querySelector('.pv-sales-block');
+                if (target) target.innerHTML = ''; // remove skeleton
                 return;
             }
 
-            // Container
+            const settings = JSON.parse(record.widgetSettings[0].widgetSettings[0].settings);
+            const target = document.querySelector('#pv-sales-block') || document.querySelector('.pv-sales-block');
+            if (!target) return;
+
             const container = document.createElement('div');
             container.style.cssText = `
-                border: 1px solid ${settings.colors?.borderColor || '#E1E3E5'};
+                border: 1px solid ${settings.colors?.borderColor || '#E1E3E5'}; 
                 border-radius: 8px;
                 padding: 16px;
                 background: ${settings.colors?.cardsBg || '#FFFFFF'};
@@ -43,12 +36,7 @@ document.addEventListener("DOMContentLoaded", function () {
             // Title row
             if (settings.block?.title) {
                 const titleRow = document.createElement('div');
-                titleRow.style.cssText = `
-                    margin-bottom: 12px;
-                    display: flex;
-                    align-items: center;
-                    gap: 12px;
-                `;
+                titleRow.style.cssText = 'margin-bottom:12px;display:flex;align-items:center;gap:12px;';
                 const line = () => {
                     const el = document.createElement('div');
                     el.style.cssText = 'flex:1;height:1px;background:#E1E3E5;';
@@ -67,47 +55,88 @@ document.addEventListener("DOMContentLoaded", function () {
                 container.appendChild(titleRow);
             }
 
-            // Bars
+            // Bars wrapper
             const barsWrap = document.createElement('div');
             barsWrap.style.cssText = 'display:flex;flex-direction:column;gap:12px;';
 
-            (settings.bars || []).forEach(bar => {
-                const barEl = createBarEl(bar, settings);
+            // Keep track of selected bar
+            // Keep track of selected bar (last bar by default)
+            let selectedBar = settings.bars[settings.bars.length - 1];
+
+            (settings.bars || []).forEach((bar, index) => {
+                const isSelected = index === settings.bars.length - 1; // last bar pre-selected
+                const barEl = createBarEl(bar, settings, isSelected);
+
+                // If this is the selected bar on load, set quantity
+                if (isSelected) {
+                    const quantityInput = document.querySelector('input[name="quantity"]');
+                    if (quantityInput) {
+                        quantityInput.value = bar.quantity || 1;
+                        quantityInput.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                }
+
+                // Click handler for all bars
+                barEl.addEventListener('click', () => {
+                    // Remove selectedBg from all bars and uncheck radios
+                    barsWrap.querySelectorAll('.bar-option').forEach(b => {
+                        b.style.background = settings.colors?.cardsBg || '#FFFFFF';
+                        const input = b.querySelector('input[type="radio"]');
+                        if (input) input.checked = false;
+                    });
+
+                    // Highlight clicked bar and check radio
+                    barEl.style.background = settings.colors?.selectedBg || '#EEF3FF';
+                    const radio = barEl.querySelector('input[type="radio"]');
+                    if (radio) radio.checked = true;
+
+                    selectedBar = bar;
+
+                    // Update quantity input
+                    const quantityInput = document.querySelector('input[name="quantity"]');
+                    if (quantityInput) {
+                        quantityInput.value = bar.quantity || 1;
+                        quantityInput.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                });
+
                 barsWrap.appendChild(barEl);
             });
 
-            container.appendChild(barsWrap);
 
-            // Mount
+            container.appendChild(barsWrap);
             target.innerHTML = '';
             target.appendChild(container);
         })
-        .catch(error => {
-            // Handle any errors during the fetch operation
-            console.error('Fetch error:', error);
-        });
-
+        .catch(err => console.error(err));
 });
 
-function createBarEl(bar, settings) {
+function createBarEl(bar, settings, isSelected = false) {
     const el = document.createElement('div');
+    el.classList.add('bar-option');
     el.style.cssText = `
         border:1px solid ${settings.colors?.borderColor || '#E1E3E5'};
         border-radius:8px;
         padding:12px;
-        background:${settings.colors?.cardsBg || '#FFFFFF'};
+        background:${isSelected ? settings.colors?.selectedBg : settings.colors?.cardsBg || '#FFFFFF'};
         cursor:pointer;
+        display:flex;
+        justify-content:space-between;
+        align-items:center;
     `;
 
-    const content = document.createElement('div');
-    content.style.cssText = `
-        display:flex;justify-content:space-between;align-items:center;width:100%;
-    `;
+    // Radio input (hidden)
+    const radio = document.createElement('input');
+    radio.type = 'radio';
+    radio.name = 'discountBar';
+    radio.value = bar.id;
+    radio.checked = isSelected;
+    radio.style.display = 'none';
+    el.appendChild(radio);
 
-    // Left: title + badge + desc
+    // Left content
     const left = document.createElement('div');
     left.style.cssText = 'display:flex;flex-direction:column;gap:4px;';
-
     const titleRow = document.createElement('div');
     titleRow.style.cssText = 'display:flex;align-items:center;gap:8px;';
 
@@ -118,9 +147,9 @@ function createBarEl(bar, settings) {
         font-weight:${settings.typography?.optionHeadingWeight || 700};
         color:${settings.colors?.barTitleColor || '#111213'};
     `;
-
     const badge = document.createElement('span');
-    badge.textContent = bar.badge;
+    const saved = calcSavedAmount(bar);
+    badge.textContent = saved > 0 ? `SAVE ${formatPrice(saved)}` : '';
     badge.style.cssText = `
         display:inline-block;background:${settings.colors?.labelBg || '#D9D9D9'};
         color:${settings.colors?.labelText || '#111213'};
@@ -128,7 +157,6 @@ function createBarEl(bar, settings) {
         font-size:${settings.typography?.labelSize || 12}px;
         font-weight:${settings.typography?.labelWeight || 400};
     `;
-
     titleRow.appendChild(title);
     titleRow.appendChild(badge);
 
@@ -143,62 +171,125 @@ function createBarEl(bar, settings) {
     left.appendChild(titleRow);
     left.appendChild(desc);
 
-    // Right: price + original price
+    // Right: price
     const right = document.createElement('div');
-    right.style.cssText = 'text-align:right;';
-
+    right.style.textAlign = 'right';
     const price = document.createElement('div');
     price.textContent = formatPrice(calcPrice(bar));
     price.style.cssText = `
         color:${settings.colors?.priceColor || '#111213'};
         font-weight:700;font-size:16px;
     `;
-
     const original = document.createElement('div');
     original.textContent = formatPrice(calcOriginalPrice(bar));
     original.style.cssText = `
         color:${settings.colors?.fullPriceColor || '#5C5F62'};
         text-decoration:line-through;margin-top:2px;font-size:14px;
     `;
-
     right.appendChild(price);
     right.appendChild(original);
 
-    content.appendChild(left);
-    content.appendChild(right);
-    el.appendChild(content);
+    el.appendChild(left);
+    el.appendChild(right);
 
     // Gift section
-    if (bar.gift) {
-        el.appendChild(createGiftEl(bar.gift, settings));
-    }
+    if (bar.gift) el.appendChild(createGiftEl(bar.gift, settings));
 
     return el;
 }
 
+// Price calculation helpers
+function calcPrice(bar) {
+    const basePrice = Number(String(PRODUCT_PRICE || 22.5).replace(/,/g, ''));;
+    const quantity = bar.quantity || 1;
+    let discounted = basePrice * quantity;
+
+    if (bar.priceType === 'percentage') {
+        discounted = discounted * (1 - (bar.priceValue || 0) / 100);
+    } else if (bar.priceType === 'amount_off') {
+        discounted = Math.max(0, discounted - (bar.priceValue || 0));
+    } else if (bar.priceType === 'exact_price') {
+        discounted = (bar.priceValue || 0) * quantity;
+    }
+
+    return discounted;
+}
+
+function calcOriginalPrice(bar) {
+    const basePrice = Number(String(PRODUCT_PRICE || 22.5).replace(/,/g, ''));;
+    return basePrice * (bar.quantity || 1);
+}
+
+function calcSavedAmount(bar) {
+    return calcOriginalPrice(bar) - calcPrice(bar);
+}
+
+function formatPrice(amount) {
+    const currency = PRODUCT_CURRENCY || 'GBP'; // Use a valid ISO code
+    return new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(amount);
+}
+
+function showSkeleton(target, barsCount = 2) {
+    const skeleton = document.createElement('div');
+    skeleton.classList.add('skeleton-wrapper');
+    skeleton.style.cssText = 'display:flex;flex-direction:column;gap:12px;padding:16px;';
+
+    for (let i = 0; i < barsCount; i++) {
+        const barSkeleton = document.createElement('div');
+        barSkeleton.style.cssText = `
+            height: 60px;
+            background: #f0f0f0;
+            border-radius: 8px;
+            position: relative;
+            overflow: hidden;
+        `;
+        // Animated shimmer
+        const shimmer = document.createElement('div');
+        shimmer.style.cssText = `
+            position: absolute;
+            top:0;left:-100%;
+            width:100%;height:100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.6), transparent);
+            animation: shimmer 1.5s infinite;
+        `;
+        barSkeleton.appendChild(shimmer);
+        skeleton.appendChild(barSkeleton);
+    }
+
+    target.innerHTML = '';
+    target.appendChild(skeleton);
+}
+
+
 function createGiftEl(gift, settings) {
     const wrap = document.createElement('div');
     wrap.style.cssText = `
-        margin-top:12px;padding-top:12px;border-top:1px solid ${settings.gift?.borderColor || '#E1E3E5'};
+        margin-top:12px;
+        padding:12px;
+        border-top:1px solid ${settings.gift?.borderColor || '#E1E3E5'};
         background:${settings.gift?.bg || '#F8F9FA'};
-        border-radius:6px;padding:12px;margin:12px -12px -12px -12px;
-        border-bottom-left-radius:8px;border-bottom-right-radius:8px;
+        border-radius:6px;
     `;
 
     const row = document.createElement('div');
     row.style.cssText = 'display:flex;align-items:center;gap:8px;';
 
+    // Gift image
     if (gift.imageUrl) {
         const img = document.createElement('img');
         img.src = gift.imageUrl;
         img.alt = gift.text || 'Gift';
         img.style.cssText = `
-            width:${gift.imageSize || 50}px;height:${gift.imageSize || 50}px;
-            object-fit:cover;border-radius:4px;border:1px solid ${settings.gift?.borderColor || '#E1E3E5'};
+            width:${gift.imageSize || 50}px;
+            height:${gift.imageSize || 50}px;
+            object-fit:cover;
+            border-radius:4px;
+            border:1px solid ${settings.gift?.borderColor || '#E1E3E5'};
         `;
         row.appendChild(img);
     }
 
+    // Gift text
     const textCol = document.createElement('div');
     textCol.style.cssText = 'display:flex;flex-direction:column;gap:4px;';
 
@@ -211,6 +302,7 @@ function createGiftEl(gift, settings) {
     `;
     textCol.appendChild(text);
 
+    // Optional variant title
     if (gift.giftVariantTitle) {
         const sub = document.createElement('div');
         sub.textContent = gift.giftVariantTitle;
@@ -223,22 +315,6 @@ function createGiftEl(gift, settings) {
 
     row.appendChild(textCol);
     wrap.appendChild(row);
-    return wrap;
-}
 
-// Basic price helpers (replace with real product pricing if available)
-function calcPrice(bar) {
-    const basePrice = 22.5;
-    const compare = basePrice * (bar.quantity || 1);
-    if (bar.priceType === 'percentage') return compare * (1 - (bar.priceValue || 0) / 100);
-    if (bar.priceType === 'amount_off') return Math.max(0, compare - (bar.priceValue || 0));
-    if (bar.priceType === 'exact_price') return (bar.priceValue || 0) * (bar.quantity || 1);
-    return compare;
-}
-function calcOriginalPrice(bar) {
-    const basePrice = 22.5;
-    return basePrice * (bar.quantity || 1);
-}
-function formatPrice(amount) {
-    return `£${Number(amount || 0).toFixed(2)}`;
+    return wrap;
 }

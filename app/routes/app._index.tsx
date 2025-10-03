@@ -26,19 +26,21 @@ import { PlusIcon } from '@shopify/polaris-icons';
 import { TitleBar, useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import { useNavigate, useLoaderData } from "@remix-run/react";
-import { getWidgetSettingsByShop } from "app/models/db.prisma";
+import { getWidgetSettingsByShop,deleteDiscountSettings } from "app/models/db.prisma";
 import { getFunctions } from "../models/functions.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
+  const shop = session.shop;
   const functions = await getFunctions(request);
   const widgets = await getWidgetSettingsByShop(session.shop);
-  return json({ widgets, functions });
+  return json({ widgets, functions, shop });
 };
 
 export default function Index() {
   const navigate = useNavigate();
-  const { widgets, functions } = useLoaderData<typeof loader>();
+  const { widgets: initialWidgets, functions, shop } = useLoaderData<typeof loader>();
+  const [widgets, setWidgets] = useState(initialWidgets);
   const [button, setButton] = useState(false);
 
   const resourceName = {
@@ -53,6 +55,17 @@ export default function Index() {
       withIllustration
     />
   );
+
+  // Handle delete
+  const handleDiscountDelete = async (id: string) => {
+    try {
+      await deleteDiscountSettings(shop, id);
+      // Filter out the deleted widget
+      setWidgets(prev => prev.filter(widget => widget.id !== id));
+    } catch (error) {
+      console.error("Failed to delete discount:", error);
+    }
+  };
 
   const rowMarkup = widgets.map((widget, index) => (
     <IndexTable.Row id={widget.id.toString()} key={widget.id} position={index}>
@@ -72,20 +85,31 @@ export default function Index() {
       <IndexTable.Cell>
         <Text as="span">{new Date(widget.createdAt).toLocaleDateString()}</Text>
       </IndexTable.Cell>
+      <IndexTable.Cell>
+        <Button
+          variant="primary"
+          onClick={() => navigate(`/app/discount/${functions[0].id}/${widget.id}`)}
+        >
+          Edit
+        </Button>
+        <Button
+          variant="primary"
+          tone="critical"
+          onClick={() => handleDiscountDelete(widget.id.toString())}
+          style={{ marginLeft: "8px" }}
+        >
+          Delete
+        </Button>
+      </IndexTable.Cell>
     </IndexTable.Row>
   ));
 
   return (
     <>
       <TitleBar title="Sales Discount Dashboard" />
-      <div style={{ padding: "0 4rem 0 4rem", }}>
-        <div style={{
-          display: "inline-flex",
-          justifyContent: "end",
-          width: "100%",
-          marginBottom: "1rem",
-        }}>
-          <ButtonGroup >
+      <div style={{ padding: "0 4rem" }}>
+        <div style={{ display: "inline-flex", justifyContent: "end", width: "100%", marginBottom: "1rem" }}>
+          <ButtonGroup>
             <div style={{ width: '3px' }} />
             <Popover
               active={button}
@@ -116,7 +140,7 @@ export default function Index() {
                 items={[{ content: 'Buy X, get Y free (BOGO) deal' }]}
                 onActionAnyItem={() => {
                   setButton(false);
-                  navigate(`/app/discount/${functionId}/new?type=bogo`);
+                  navigate(`/app/discount/${functions[0].id}/new?type=bogo`);
                 }}
               />
             </Popover>
@@ -133,6 +157,7 @@ export default function Index() {
               { title: "Status" },
               { title: "Discount" },
               { title: "Created" },
+              { title: "Actions" },
             ]}
           >
             {rowMarkup}

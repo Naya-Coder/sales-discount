@@ -31,36 +31,46 @@ model Session {
   emailVerified  Boolean?  @default(false)
 
   // Relationships
-  discountSettings DiscountSettings[]
+  widgets Widget[]
+}
+
+model Widget {
+  id        Int       @id @default(autoincrement())
+  shop      String
+  title     String
+  status    Boolean    @default(false)
+  settings  Json       // widget-specific settings
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  // Relationships
+  session   Session   @relation(fields: [shop], references: [shop], onDelete: Cascade)
+  discounts DiscountSettings[]
 }
 
 model DiscountSettings {
-  id            Int       @id @default(autoincrement())
-  shop          String
-  bundleName    String
-  discountName  String
-  productId    String   
-  discountLogic Json       // flexible JSON (quantity break, rules, etc.)
-  startDate     DateTime
-  endDate       DateTime?
+  id           Int       @id @default(autoincrement())
+  widgetId     Int
+  bundleName   String
+  discountName String
+  discountLogic Json       // quantity break, rules, etc.
+  appliesTo    DiscountTarget
+  productIds   String[]    // array of product IDs if appliesTo = SPECIFIC_PRODUCTS
+  collectionIds String[]   // array of collection IDs if appliesTo = SPECIFIC_COLLECTIONS
+  startDate    DateTime
+  endDate      DateTime?
 
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
-
-  // Relationships
-  session       Session    @relation(fields: [shop], references: [shop], onDelete: Cascade)
-  widgetSettings WidgetSettings[]
-}
-
-model WidgetSettings {
-  id          Int       @id @default(autoincrement())
-  discountId  Int
-  title       String     @db.VarChar(255)
-  status      Boolean    @default(false)
-  settings    String     // widget-specific JSON/settings
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
 
   // Relationships
-  discount    DiscountSettings @relation(fields: [discountId], references: [id], onDelete: Cascade)
+  widget Widget @relation(fields: [widgetId], references: [id], onDelete: Cascade)
 }
+
+enum DiscountTarget {
+  ALL_PRODUCTS
+  SPECIFIC_PRODUCTS
+  SPECIFIC_COLLECTIONS
+  ALL_PRODUCTS_NOT_SOME
+}
+

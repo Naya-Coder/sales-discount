@@ -41,6 +41,8 @@ interface DiscountPayload {
   bundleName: string;
   discountName: string;
   productIds: string[];
+  collectionIds: string[];
+  visibility: string;
   discountLogic: unknown; // object persisted in DB (parsed JSON)
   startDate: string; // ISO
   endDate?: string | null; // ISO or null
@@ -57,7 +59,7 @@ async function buildAutomaticDiscountVariables(discount: DiscountPayload, functi
     startsAt: new Date(discount.startDate).toISOString(),
     endsAt: discount.endDate ? new Date(discount.endDate).toISOString() : null,
     functionId,
-    combinesWith: { productDiscounts: true,orderDiscounts:false,shippingDiscounts:false },
+    combinesWith: { productDiscounts: true, orderDiscounts: false, shippingDiscounts: false },
     discountClasses: ["PRODUCT"],
     metafields: [
       {
@@ -74,6 +76,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   const formData = await request.formData();
   const discountRaw = formData.get("discount");
+  // return discountRaw;
   if (!discountRaw || typeof discountRaw !== "string") throw new Error("No discount data provided");
 
   let discount: DiscountPayload;
@@ -82,14 +85,14 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
   } catch {
     throw new Error("Invalid JSON payload");
   }
-
+  // return discount;
   // Defaults
   if (!discount.bundleName) discount.bundleName = discount.discountName || "Default Bundle";
   if (!discount.startDate) discount.startDate = new Date().toISOString();
 
   const functionId = params.functionId || process.env.DISCOUNT_FUNCTION_ID || "";
   if (!functionId) {
-    return json<ActionData>({ success: false, errors: [{ field: ["automaticAppDiscount","functionId"], message: "Function id can't be blank." }] as any }, { status: 400 });
+    return json<ActionData>({ success: false, errors: [{ field: ["automaticAppDiscount", "functionId"], message: "Function id can't be blank." }] as any }, { status: 400 });
   }
 
   // Create Shopify discount first; only persist DB if successful
@@ -103,30 +106,25 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
   }
 
   // Persist discount settings (one row per productId if provided)
-  const createdDiscountRows = await createDiscountSetting(
-    {
-      bundleName: discount.bundleName,
-      discountName: discount.discountName,
-      productIds: discount.productIds || [],
-      discountLogic: discount.discountLogic ?? {},
-      startDate: new Date(discount.startDate),
-      endDate: discount.endDate ? new Date(discount.endDate) : undefined,
-    },
-    session.shop,
-  );
+  // STEP 1: Create Widget first
+  const widget = await createWidgetSettings({
+    shop: session.shop,
+    title: discount.widgetSettings?.title || discount.bundleName,
+    status: true,
+    settings: discount.widgetSettings?.settings || {},
+  });
 
-  // Persist widget settings linked to created discount setting rows
-  if (createdDiscountRows && createdDiscountRows.length > 0) {
-    await createWidgetSettings({
-      items: createdDiscountRows.map((row) => ({
-        discountId: row.id,
-        title: discount.widgetSettings?.title || discount.bundleName,
-        status: true,
-        settings: JSON.stringify(discount.widgetSettings?.settings || {}),
-      })),
-    });
-  }
-
+  const createdDiscountRows = await createDiscountSetting({
+    widgetId: widget.id,
+    bundleName: discount.bundleName,
+    discountName: discount.discountName,
+    visibility: discount.visibility,
+    productIds: discount.productIds || [],
+    collectionIds : discount.collectionIds || [],
+    discountLogic: discount.discountLogic ?? {},
+    startDate: new Date(discount.startDate),
+    endDate: discount.endDate ? new Date(discount.endDate) : undefined,
+  });
   // Redirect to app home on success
   return redirect("/app");
 };
@@ -232,7 +230,7 @@ export default function VolumeNew() {
     },
   };
 
-  const [visibility, setVisibility] = useState('allProducts');
+  const [visibility, setVisibility] = useState('ALL_PRODUCTS');
 
   const handleVisibilityChange = useCallback(
     (_: boolean, newValue: string) => setVisibility(newValue),
@@ -275,10 +273,10 @@ export default function VolumeNew() {
   // Build metafield payload from visibility + bars
   const metafieldOverride = useMemo(() => {
     const scope = (() => {
-      if (visibility === 'allProducts') return { all: true };
-      if (visibility === 'specificSelectedProducts') return { productIds: selectedProducts.map(p => p.id) };
-      if (visibility === 'productsInSelectedCollections') return { collectionIds: selectedCollections.map(c => c.id) };
-      if (visibility === 'allProductsExceptSelected') return { all: true, excludeProductIds: selectedProducts.map(p => p.id) };
+      if (visibility === 'ALL_PRODUCTS') return { all: true };
+      if (visibility === 'SPECIFIC_PRODUCTS') return { productIds: selectedProducts.map(p => p.id) };
+      if (visibility === 'SPECIFIC_COLLECTIONS') return { collectionIds: selectedCollections.map(c => c.id) };
+      if (visibility === 'ALL_PRODUCTS_NOT_SOME') return { all: true, excludeProductIds: selectedProducts.map(p => p.id) };
       return {};
     })();
 
@@ -312,14 +310,18 @@ export default function VolumeNew() {
 
   // Prepare discount payload for submission
   const discountFormJson = useMemo(() => {
-    const productIds = visibility === 'specificSelectedProducts' || visibility === 'allProductsExceptSelected'
+    const productIds = visibility === 'SPECIFIC_PRODUCTS' || visibility === 'ALL_PRODUCTS_NOT_SOME'
       ? selectedProducts.map(p => p.id)
       : [];
+
+    const collectionIds = visibility === "SPECIFIC_COLLECTIONS" ? selectedCollections.map(c => c.id) : [];
 
     const payload: DiscountPayload = {
       bundleName: name,
       discountName: discountTitle || name,
       productIds,
+      collectionIds,
+      visibility,
       discountLogic: (() => { try { return JSON.parse(metafieldOverride); } catch { return {}; } })(),
       startDate: new Date().toISOString(),
       endDate: null,
@@ -714,8 +716,8 @@ export default function VolumeNew() {
                       <div>
                         <RadioButton
                           label="All Products"
-                          checked={visibility === 'allProducts'}
-                          id="allProducts"
+                          checked={visibility === 'ALL_PRODUCTS'}
+                          id="ALL_PRODUCTS"
                           name="visibility"
                           onChange={handleVisibilityChange}
                         />
@@ -723,12 +725,12 @@ export default function VolumeNew() {
                       <div>
                         <RadioButton
                           label="All products except selected"
-                          id="allProductsExceptSelected"
+                          id="ALL_PRODUCTS_NOT_SOME"
                           name="visibility"
-                          checked={visibility === 'allProductsExceptSelected'}
+                          checked={visibility === 'ALL_PRODUCTS_NOT_SOME'}
                           onChange={handleVisibilityChange}
                         />
-                        {visibility === 'allProductsExceptSelected' ? (
+                        {visibility === 'ALL_PRODUCTS_NOT_SOME' ? (
                           <div style={{ marginTop: 8, marginLeft: 28 }}>
                             <div style={{ marginTop: 6 }}>
                               <ProductPicker
@@ -745,12 +747,12 @@ export default function VolumeNew() {
                       <div>
                         <RadioButton
                           label="Specific selected products"
-                          id="specificSelectedProducts"
+                          id="SPECIFIC_PRODUCTS"
                           name="visibility"
-                          checked={visibility === 'specificSelectedProducts'}
+                          checked={visibility === 'SPECIFIC_PRODUCTS'}
                           onChange={handleVisibilityChange}
                         />
-                        {visibility === 'specificSelectedProducts' ? (
+                        {visibility === 'SPECIFIC_PRODUCTS' ? (
                           <div style={{ marginTop: 8, marginLeft: 28 }}>
                             {/* <Text as="p" variant="bodyMd">Select products</Text> */}
                             <div style={{ marginTop: 6 }}>
@@ -768,12 +770,12 @@ export default function VolumeNew() {
                       <div>
                         <RadioButton
                           label="Products in selected collections"
-                          id="productsInSelectedCollections"
+                          id="SPECIFIC_COLLECTIONS"
                           name="visibility"
-                          checked={visibility === 'productsInSelectedCollections'}
+                          checked={visibility === 'SPECIFIC_COLLECTIONS'}
                           onChange={handleVisibilityChange}
                         />
-                        {visibility === 'productsInSelectedCollections' ? (
+                        {visibility === 'SPECIFIC_COLLECTIONS' ? (
                           <div style={{ marginTop: 8, marginLeft: 28 }}>
                             {/* <Text as="p" variant="bodyMd">Select collections</Text> */}
                             <div style={{ marginTop: 6 }}>
