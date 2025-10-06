@@ -19,3 +19,18 @@ export const CREATE_AUTOMATIC_DISCOUNT = `
     }
   }
 `;
+
+export const UPDATE_AUTOMATIC_DISCOUNT = `
+  mutation discountAutomaticAppUpdate($automaticAppDiscount: DiscountAutomaticAppInput!, $id: ID!) {
+  discountAutomaticAppUpdate(automaticAppDiscount: $automaticAppDiscount, id: $id) {
+    automaticAppDiscount {
+      title
+      discountId
+    }
+    userErrors {
+      field
+      message
+    }
+  }
+}
+`;

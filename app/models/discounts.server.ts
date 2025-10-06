@@ -1,6 +1,6 @@
 import {
   CREATE_AUTOMATIC_DISCOUNT,
-  // UPDATE_AUTOMATIC_DISCOUNT,
+  UPDATE_AUTOMATIC_DISCOUNT,
   // GET_DISCOUNT,
 } from "../graphql/discounts";
 import { authenticate } from "../shopify.server";
@@ -25,6 +25,14 @@ interface MetafieldInput {
   value: string; // always stringified JSON
 }
 
+interface MetafieldUpdateInput {
+  id:string;
+  namespace: string;
+  key: string;
+  type: "json" | "string" | "integer" | "boolean";
+  value: string; // always stringified JSON
+}
+
 const SHOPIFY_API_VERSION = "2025-04";
 
 export async function createAutomaticDiscount(
@@ -32,15 +40,9 @@ export async function createAutomaticDiscount(
   discountInput: AutomaticAppDiscountInput
 ) {
   const { admin,session } = await authenticate.admin(request);
-  console.log(discountInput,'discountInput in createAutomaticDiscount');
-  
-  //  const response = await admin.graphql(CREATE_AUTOMATIC_DISCOUNT, {
-  //   variables: { automaticAppDiscount: discountInput }
-  // });
-  // const responseJson = await response.json();
 
    const url = `https://${session.shop}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`;
-// return session;
+
   const response = await fetch(url, {
     method: "POST",
     headers: {
@@ -61,44 +63,20 @@ export async function createAutomaticDiscount(
   };
 }
 
-
 export async function updateAutomaticDiscount(
+  discountId: string,
   request: Request,
-  id: string,
-  baseDiscount: BaseDiscount,
-  configuration: {
-    metafieldId: string;
-    cartLinePercentage: number;
-    orderPercentage: number;
-    deliveryPercentage: number;
-    collectionIds?: string[];
-  },
+  discountInput: AutomaticAppDiscountInput
 ) {
   const { admin } = await authenticate.admin(request);
-  const discountId = id.includes("gid://")
-    ? id
-    : `gid://shopify/DiscountAutomaticApp/${id}`;
+  const discountNodeId = discountId.includes("gid://")
+    ? discountId
+    : `gid://shopify/DiscountAutomaticApp/${discountId}`;
 
   const response = await admin.graphql(UPDATE_AUTOMATIC_DISCOUNT, {
     variables: {
-      id: discountId,
-      discount: {
-        ...baseDiscount,
-        metafields: [
-          {
-            id: configuration.metafieldId,
-            value: JSON.stringify({
-              cartLinePercentage: configuration.cartLinePercentage,
-              orderPercentage: configuration.orderPercentage,
-              deliveryPercentage: configuration.deliveryPercentage,
-              collectionIds:
-                configuration.collectionIds?.map((id) =>
-                  id.includes("gid://") ? id : `gid://shopify/Collection/${id}`,
-                ) || [],
-            }),
-          },
-        ],
-      },
+      id: discountNodeId,
+      automaticAppDiscount : discountInput
     },
   });
 
@@ -108,40 +86,28 @@ export async function updateAutomaticDiscount(
   };
 }
 
-export async function getDiscount(request: Request, id: string) {
+export async function getMetafieldsId(request: Request, id: string) {
   const { admin } = await authenticate.admin(request);
-  const response = await admin.graphql(GET_DISCOUNT, {
-    variables: {
-      id: `gid://shopify/DiscountNode/${id}`,
-    },
-  });
 
-  const responseJson = await response.json();
-  if (
-    !responseJson.data.discountNode ||
-    !responseJson.data.discountNode.discount
-  ) {
-    return { discount: null };
-  }
+  const response = await admin.graphql(
+    `
+      query GetDiscountMetafields($id: ID!) {
+        discountNode(id: $id) {
+          metafields(first: 250) {
+            edges {
+              node {
+                id
+              }
+            }
+          }
+        }
+      }
+    `,
+    {
+      variables: { id },
+    }
+  );
 
-  const method =
-    responseJson.data.discountNode.discount.__typename === "DiscountCodeApp"
-      ? DiscountMethod.Code
-      : DiscountMethod.Automatic;
-
-  const {
-    title,
-    codes,
-    combinesWith,
-  } = responseJson.data.discountNode.discount;
-
-  return {
-    discount: {
-      id,
-      title,
-      method,
-      code: method === DiscountMethod.Code ? codes?.nodes?.[0]?.code : undefined,
-      combinesWith,
-    },
-  };
+  return response;
 }
+

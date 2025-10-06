@@ -37,6 +37,7 @@ export async function createDiscountSetting(
     widgetId,
     bundleName,
     discountName,
+    discountId,
     visibility,
     productIds,
     collectionIds,
@@ -47,6 +48,7 @@ export async function createDiscountSetting(
     widgetId: number;
     bundleName: string;
     discountName: string;
+    discountId: string;
     visibility:string;
     productIds: string[];
     collectionIds: string[],
@@ -63,6 +65,7 @@ export async function createDiscountSetting(
           widgetId, // ✅ directly link widget
           bundleName,
           discountName,
+          discountId,
           discountLogic,
           productIds: productId ? [productId] : [],
           collectionIds : collectionIds ? collectionIds : [],
