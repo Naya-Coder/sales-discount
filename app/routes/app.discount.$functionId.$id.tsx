@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { Form, useNavigation, useNavigate, useActionData, useLoaderData } from "@remix-run/react";
 import { Page, Card, TextField, Button, InlineStack, Text, BlockStack, RadioButton, Collapsible, Select, Banner } from "@shopify/polaris";
 import { ProductPicker } from "../components/ProductPicker/ProductPicker";
-import { createAutomaticDiscount } from "../models/discounts.server";
+import { getMetafieldsId, updateAutomaticDiscount } from "../models/discounts.server";
 import { getWidgetById, updateWidgetSettings, updateDiscountSettings } from "../models/db.prisma.server";
 import { authenticate } from "../shopify.server";
 import { LoaderFunctionArgs, ActionFunctionArgs, redirect, json } from "@remix-run/node";
@@ -19,7 +19,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   }
 
   const widget = await getWidgetById(session.shop, widgetId);
-  
+
   if (!widget) {
     throw new Error("Widget not found");
   }
@@ -38,7 +38,6 @@ interface AutomaticAppDiscountInput {
   title: string;
   startsAt: string;
   endsAt?: string | null;
-  functionId: string;
   combinesWith: {
     productDiscounts: boolean;
     shippingDiscounts: boolean;
@@ -52,6 +51,7 @@ interface DiscountPayload {
   bundleName: string;
   template: string;
   discountName: string;
+  discountId: string;
   productIds: string[];
   collectionIds: string[];
   visibility: string;
@@ -65,16 +65,16 @@ interface DiscountPayload {
   };
 }
 
-async function buildAutomaticDiscountVariables(discount: DiscountPayload, functionId: string): Promise<AutomaticAppDiscountInput> {
+async function buildAutomaticDiscountVariables(discount: DiscountPayload, functionId: string, metafieldId: string): Promise<AutomaticAppDiscountInput> {
   return {
     title: discount.discountName,
     startsAt: new Date(discount.startDate).toISOString(),
     endsAt: discount.endDate ? new Date(discount.endDate).toISOString() : null,
-    functionId,
     combinesWith: { productDiscounts: true, orderDiscounts: false, shippingDiscounts: false },
     discountClasses: ["PRODUCT"],
     metafields: [
       {
+        id: metafieldId,
         namespace: "default",
         key: "function-configuration",
         type: "json",
@@ -88,7 +88,6 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   const formData = await request.formData();
   const discountRaw = formData.get("discount");
-  // return discountRaw;
   if (!discountRaw || typeof discountRaw !== "string") throw new Error("No discount data provided");
 
   let discount: DiscountPayload;
@@ -97,7 +96,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
   } catch {
     throw new Error("Invalid JSON payload");
   }
-//   return discount;
+  // return discount;
   // Defaults
   if (!discount.bundleName) discount.bundleName = discount.discountName || "Default Bundle";
   if (!discount.startDate) discount.startDate = new Date().toISOString();
@@ -108,21 +107,28 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
   }
 
   const widgetId = params.id;
+  const discountId = discount?.discountId;
   if (!widgetId) {
-    return json<ActionData>({ 
-      success: false, 
-      errors: [{ field: [], message: "Widget ID is required" }] as any 
+    return json<ActionData>({
+      success: false,
+      errors: [{ field: [], message: "Widget ID is required" }] as any
     }, { status: 400 });
   }
 
+  // return discountId;
+  const response = await getMetafieldsId(request, discountId);
+  const { data } = await response.json();
+
+  const metafieldId = data?.discountNode?.metafields?.edges[0]?.node?.id;
   try {
-    console.log("Updating widget with data:", {
-      visibility: discount.visibility,
-      productIds: discount.productIds,
-      collectionIds: discount.collectionIds,
-      discountLogic: discount.discountLogic,
-      note: `Visibility: ${discount.visibility} - ${discount.visibility.includes('PRODUCT') ? 'Using productIds' : 'Using collectionIds'}`
-    });
+    const discountApiPayload = await buildAutomaticDiscountVariables(discount, functionId, metafieldId);
+    const { data: updatedShopifyDiscount, errors } = await updateAutomaticDiscount(discountId, request, discountApiPayload);
+    if (errors && errors.length > 0) {
+      return json<ActionData>({ success: false, errors: errors as any }, { status: 400 });
+    }
+    if (!updatedShopifyDiscount?.discountId) {
+      return json<ActionData>({ success: false, errors: [{ field: [], message: "Failed to update discount in Shopify" }] as any }, { status: 400 });
+    }
 
     // Update widget settings
     await updateWidgetSettings(widgetId, {
@@ -150,9 +156,9 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     return redirect("/app");
   } catch (error) {
     console.error("Error updating widget:", error);
-    return json<ActionData>({ 
-      success: false, 
-      errors: [{ field: [], message: "Failed to update widget" }] as any 
+    return json<ActionData>({
+      success: false,
+      errors: [{ field: [], message: "Failed to update widget" }] as any
     }, { status: 500 });
   }
 };
@@ -195,15 +201,16 @@ export default function EditDiscount() {
   const submitErrors = actionData?.errors || [];
   const [styleOpen, setStyleOpen] = useState(true);
   const [discountOpen, setDiscountOpen] = useState(false);
-  
+
   // Parse existing data
   const existingSettings = widget.settings as any;
   const existingDiscount = widget.discounts?.[0];
-  
+
   const [name, setName] = useState<string>(existingDiscount?.bundleName || "Bundle 1");
   const [template, setTemplate] = useState<string>(widget.template || "quantity-breaks");
   const [discountTitle, setDiscountTitle] = useState<string>(existingDiscount?.discountName || "");
   const [blockTitle, setBlockTitle] = useState<string>(existingSettings?.block?.title || "End of Sale");
+  const [discountId, setDiscountId] = useState<string>(existingDiscount?.discountId);
 
   // Initialize discount bars from existing settings
   const [discountBars, setDiscountBars] = useState<DiscountBar[]>(
@@ -375,21 +382,22 @@ export default function EditDiscount() {
       bundleName: name,
       template: template,
       discountName: discountTitle || name,
+      discountId: discountId,
       productIds,
       collectionIds,
       visibility,
-      discountLogic: (() => { 
-        try { 
+      discountLogic: (() => {
+        try {
           const parsed = JSON.parse(metafieldOverride);
           // If parsed is empty, use existing discountLogic
           if (Object.keys(parsed).length === 0 && existingDiscount?.discountLogic) {
             return existingDiscount.discountLogic;
           }
           return parsed;
-        } catch { 
+        } catch {
           // If parsing fails, use existing discountLogic
           return existingDiscount?.discountLogic || {};
-        } 
+        }
       })(),
       startDate: new Date().toISOString(),
       endDate: null,
@@ -401,7 +409,7 @@ export default function EditDiscount() {
     };
 
     return JSON.stringify(payload);
-  }, [name, template, discountTitle, visibility, selectedProducts, selectedCollections, metafieldOverride, blockTitle, widgetSettingsJson, existingDiscount]);
+  }, [name, template, discountTitle, visibility, selectedProducts, selectedCollections, metafieldOverride, blockTitle, widgetSettingsJson, existingDiscount, discountId]);
 
   // Add/remove bar functions
   const addBar = useCallback(() => {

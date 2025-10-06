@@ -120,6 +120,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     widgetId: widget.id,
     bundleName: discount.bundleName,
     discountName: discount.discountName,
+    discountId : createdShopifyDiscount?.discountId,
     visibility: discount.visibility,
     productIds: discount.productIds || [],
     collectionIds : discount.collectionIds || [],

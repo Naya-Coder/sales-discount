@@ -54,6 +54,7 @@ model DiscountSettings {
   widgetId     Int
   bundleName   String
   discountName String
+  discountId    String
   discountLogic Json       // quantity break, rules, etc.
   appliesTo    DiscountTarget
   productIds   String[]    // array of product IDs if appliesTo = SPECIFIC_PRODUCTS
