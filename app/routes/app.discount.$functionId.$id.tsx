@@ -28,6 +28,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
 };
 
 interface MetafieldInput {
+  id?: string;
   namespace: string;
   key: string;
   type: "string" | "boolean" | "json" | "integer";
@@ -36,6 +37,7 @@ interface MetafieldInput {
 
 interface AutomaticAppDiscountInput {
   title: string;
+  code?: string;
   startsAt: string;
   endsAt?: string | null;
   combinesWith: {
@@ -51,6 +53,7 @@ interface DiscountPayload {
   bundleName: string;
   template: string;
   discountName: string;
+  discountCode?: string;
   discountId: string;
   productIds: string[];
   collectionIds: string[];
@@ -117,7 +120,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
 
   // return discountId;
   const response = await getMetafieldsId(request, discountId);
-  const { data } = await response.json();
+  const { data } = response;
 
   const metafieldId = data?.discountNode?.metafields?.edges[0]?.node?.id;
   try {
@@ -144,6 +147,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
       await updateDiscountSettings(widget.discounts[0].id.toString(), {
         bundleName: discount.bundleName,
         discountName: discount.discountName,
+        discountCode: discount.discountCode,
         visibility: discount.visibility,
         productIds: discount.productIds || [],
         collectionIds: discount.collectionIds || [],
@@ -210,7 +214,7 @@ export default function EditDiscount() {
   const [template, setTemplate] = useState<string>(widget.template || "quantity-breaks");
   const [discountTitle, setDiscountTitle] = useState<string>(existingDiscount?.discountName || "");
   const [blockTitle, setBlockTitle] = useState<string>(existingSettings?.block?.title || "End of Sale");
-  const [discountId, setDiscountId] = useState<string>(existingDiscount?.discountId);
+  const [discountId, setDiscountId] = useState<string>((existingDiscount as any)?.discountId);
 
   // Initialize discount bars from existing settings
   const [discountBars, setDiscountBars] = useState<DiscountBar[]>(

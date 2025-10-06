@@ -13,12 +13,14 @@ interface UserError {
 
 interface AutomaticAppDiscountInput {
   title: string;
+  code?: string;
   startsAt: string;
   endsAt?: string | null;
   metafields: MetafieldInput[];
 }
 
 interface MetafieldInput {
+  id?: string;
   namespace: string;
   key: string;
   type: "json" | "string" | "integer" | "boolean";
@@ -41,19 +43,27 @@ export async function createAutomaticDiscount(
 ) {
   const { admin,session } = await authenticate.admin(request);
 
+  if (!session?.accessToken) {
+    throw new Error("No access token available");
+  }
+
    const url = `https://${session.shop}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`;
 
   const response = await fetch(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "X-Shopify-Access-Token": session?.accessToken, // auth
+      "X-Shopify-Access-Token": session.accessToken,
     },
     body: JSON.stringify({
       query: CREATE_AUTOMATIC_DISCOUNT,
       variables: { automaticAppDiscount: discountInput },
     }),
   });
+
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`);
+  }
 
   const responseJson = await response.json();
 
@@ -68,46 +78,84 @@ export async function updateAutomaticDiscount(
   request: Request,
   discountInput: AutomaticAppDiscountInput
 ) {
-  const { admin } = await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
+  
+  if (!session?.accessToken) {
+    throw new Error("No access token available");
+  }
+  
   const discountNodeId = discountId.includes("gid://")
     ? discountId
     : `gid://shopify/DiscountAutomaticApp/${discountId}`;
 
-  const response = await admin.graphql(UPDATE_AUTOMATIC_DISCOUNT, {
-    variables: {
-      id: discountNodeId,
-      automaticAppDiscount : discountInput
+  const url = `https://${session.shop}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`;
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Shopify-Access-Token": session.accessToken,
     },
+    body: JSON.stringify({
+      query: UPDATE_AUTOMATIC_DISCOUNT,
+      variables: {
+        id: discountNodeId,
+        automaticAppDiscount: discountInput
+      },
+    }),
   });
+
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`);
+  }
 
   const responseJson = await response.json();
   return {
-    errors: responseJson.data.discountUpdate?.userErrors as UserError[],
+    data: responseJson.data?.discountAutomaticAppUpdate?.automaticAppDiscount,
+    errors: responseJson.data?.discountAutomaticAppUpdate?.userErrors as UserError[],
   };
 }
 
 export async function getMetafieldsId(request: Request, id: string) {
-  const { admin } = await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
 
-  const response = await admin.graphql(
-    `
-      query GetDiscountMetafields($id: ID!) {
-        discountNode(id: $id) {
-          metafields(first: 250) {
-            edges {
-              node {
-                id
-              }
+  if (!session?.accessToken) {
+    throw new Error("No access token available");
+  }
+
+  const url = `https://${session.shop}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`;
+
+  const query = `
+    query GetDiscountMetafields($id: ID!) {
+      discountNode(id: $id) {
+        metafields(first: 250) {
+          edges {
+            node {
+              id
             }
           }
         }
       }
-    `,
-    {
-      variables: { id },
     }
-  );
+  `;
 
-  return response;
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Shopify-Access-Token": session.accessToken,
+    },
+    body: JSON.stringify({
+      query,
+      variables: { id },
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`);
+  }
+
+  const responseJson = await response.json();
+  return responseJson;
 }
 

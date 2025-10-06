@@ -190,11 +190,11 @@ export default function VolumeNew() {
       id: 'bar-2',
       barTitle: 'Bar 2',
       title: '2 Pack',
-      description: 'You save £5.00', // This will be dynamic based on priceType
-      badge: 'SAVE £5.00', // Direct amount off
+      description: 'You save 25%', // This will be dynamic based on priceType
+      badge: 'SAVE £6.75', // Direct amount off
       quantity: 2,
-      priceType: 'amount_off',
-      priceValue: 5
+      priceType: 'percentage',
+      priceValue: 25
     }
   ]);
   const [selectedBarId, setSelectedBarId] = useState<string>('bar-1');

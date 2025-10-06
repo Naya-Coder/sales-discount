@@ -13,7 +13,7 @@ document.addEventListener("DOMContentLoaded", function () {
         .then(res => res.json())
         .then(data => {
             console.log('API Response:', data);
-            
+
             // Handle new response format
             if (!data || !data.widgetSettings || data.widgetSettings.length === 0) {
                 const target = document.querySelector('#pv-sales-block') || document.querySelector('.pv-sales-block');
@@ -24,22 +24,22 @@ document.addEventListener("DOMContentLoaded", function () {
             // Get the first widget setting and its associated widget
             const widgetSetting = data.widgetSettings[0];
             const widget = widgetSetting.widget;
-            
+
             if (!widget || !widget.settings) {
                 const target = document.querySelector('#pv-sales-block') || document.querySelector('.pv-sales-block');
                 if (target) target.innerHTML = ''; // remove skeleton
                 return;
             }
 
-            const settings = typeof widget.settings === 'string' 
-                ? JSON.parse(widget.settings) 
+            const settings = typeof widget.settings === 'string'
+                ? JSON.parse(widget.settings)
                 : widget.settings;
-            
+
             // Get template type for future use
             const template = widget.template || 'quantity-breaks';
             console.log('Widget template:', template);
             console.log('Widget settings:', settings);
-            
+
             const target = document.querySelector('#pv-sales-block') || document.querySelector('.pv-sales-block');
             if (!target) return;
 
@@ -53,10 +53,25 @@ document.addEventListener("DOMContentLoaded", function () {
         .catch(err => console.error(err));
 
     // As a safety net, ensure the property is present before any /cart/add form submits
-    document.addEventListener('submit', function(e) {
+    document.addEventListener('submit', function (e) {
         const target = e.target;
         if (!(target instanceof HTMLFormElement)) return;
-        if (!target.matches('form[action^="/cart/add"]')) return;
+        // Support broader patterns beyond just /cart/add
+        const actionAttr = (target.getAttribute('action') || '').trim();
+        // Extract pathname if absolute URL
+        console.log("Form action attribute:", actionAttr);
+        
+        let actionPath = actionAttr;
+        try {
+            if (/^https?:\/\//i.test(actionAttr)) {
+                const u = new URL(actionAttr);
+                actionPath = u.pathname || '';
+            }
+        } catch (_) {}
+        // Accept common add-to-cart endpoints (theme-dependent):
+        // /cart/add, /cart/add.js, /cart, /add, /add-cart, /cart/add_item, etc.
+        const addToCartRegex = /(\/cart(\/add(_item)?(\.js)?)?$)|(\/add(-cart)?$)/i;
+        if (!addToCartRegex.test(actionPath)) return;
 
         const quantityInput = document.querySelector('input[name="quantity"]');
         const selectedQuantity = quantityInput && quantityInput.value ? Number(quantityInput.value) : 1;
@@ -70,8 +85,8 @@ document.addEventListener("DOMContentLoaded", function () {
             } else {
                 setLineItemPropertiesFromBar({ quantity: selectedQuantity });
             }
-        } catch (err) {}
-        
+        } catch (err) { }
+
         // If we can infer a selected bar from UI, also set gift-related properties
         try {
             const selectedBarEl = document.querySelector('.bar-option input[type="radio"]:checked');
@@ -82,9 +97,86 @@ document.addEventListener("DOMContentLoaded", function () {
                     setLineItemPropertiesFromBar(window.__PV_WIDGET_BARS__[index]);
                 }
             }
-        } catch (err) {}
+        } catch (err) { }
+
+        setTimeout(() => {
+            try {
+                console.log('Checking cart for gift products...');
+
+                fetch('/cart.js')
+                    .then(res => res.json())
+                    .then(cart => {
+                        if (!cart || !cart.items) return;
+                        console.log("Current cart items:", cart.items);
+
+                        const hasGift = cart.items.some(item => item.properties && item.properties._giftProduct === 'true');
+                        if (hasGift) {
+                            // Optionally, show a message or update UI to indicate a gift is included
+                            cart.items.forEach(item => {
+                                const propQty = Number(item.properties._quantity || 0);
+                                const actualQty = Number(item.quantity || 0);
+
+                                if (propQty > 0 && propQty === actualQty) {
+                                    var variantId = item.properties._variant_id || null;
+                                    try {
+                                        const res = fetch('/cart/add.js', {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({
+                                                items: [
+                                                    {
+                                                        id: variantId,
+                                                        quantity: 1,
+                                                        properties: {
+                                                            _isGift: 'true',
+                                                        },
+                                                    },
+                                                ],
+                                            }),
+                                        }).then((r) => r.json())
+                                            .then(res => {
+                                                console.log('🎉 Gift product added:', res);
+                                                refreshDiv();
+                                            })
+                                            .catch(err => console.error('❌ Failed to add gift product:', err));
+                                    } catch (err) {
+                                        console.error('❌ Failed to add gift product:', err);
+                                    }
+                                    console.log(`Gift product in cart: ${item.title} (Quantity: ${item.quantity})`);
+                                } else {
+                                    console.log(`Regular product in cart: ${item.title} (Quantity: ${item.quantity})`);
+                                }
+                            });
+
+                        } else {
+                            console.log('No gift product in cart.');
+                        }
+                    });
+            } catch (error) {
+
+            }
+        }, 2000); // slight delay to ensure cart is updated
     }, true);
 });
+
+function refreshDiv() {
+    fetch(location.href)
+        .then(response => response.text())
+        .then(html => {
+            // Parse the response HTML
+            let parser = new DOMParser();
+            let doc = parser.parseFromString(html, 'text/html');
+
+            // Find the content inside #myRefreshDiv in the fetched HTML
+            let newContent = doc.querySelector('.cart-drawer');
+
+            // Replace the #myMainDiv's content with the updated #myRefreshDiv
+            if (newContent) {
+                document.querySelector('.cart-drawer').innerHTML = newContent.innerHTML;
+            }
+        })
+        .catch(err => console.error('Error fetching content:', err));
+}
 
 function renderQuantityBreaksWidget(target, settings, widgetSetting) {
     const container = document.createElement('div');
@@ -126,7 +218,7 @@ function renderQuantityBreaksWidget(target, settings, widgetSetting) {
 
     const bars = settings.bars || [];
     // Expose bars globally for submit-time mapping if needed
-    try { window.__PV_WIDGET_BARS__ = bars; } catch (e) {}
+    try { window.__PV_WIDGET_BARS__ = bars; } catch (e) { }
 
     bars.forEach((bar, index) => {
         const isSelected = index === settings.bars.length - 1; // last bar pre-selected
@@ -140,7 +232,7 @@ function renderQuantityBreaksWidget(target, settings, widgetSetting) {
                 quantityInput.dispatchEvent(new Event('change', { bubbles: true }));
             }
             // Ensure line item properties are set on all add-to-cart forms on initial render
-            try { setLineItemPropertiesFromBar(bar); } catch (e) {}
+            try { setLineItemPropertiesFromBar(bar); } catch (e) { }
         }
 
         // Click handler for all bars
@@ -165,9 +257,9 @@ function renderQuantityBreaksWidget(target, settings, widgetSetting) {
                 quantityInput.value = bar.quantity || 1;
                 quantityInput.dispatchEvent(new Event('change', { bubbles: true }));
             }
-            
+
             // Update hidden properties on all add-to-cart forms
-            try { setLineItemPropertiesFromBar(bar); } catch (e) {}
+            try { setLineItemPropertiesFromBar(bar); } catch (e) { }
         });
 
         barsWrap.appendChild(barEl);
@@ -188,7 +280,7 @@ function renderBxgyWidget(target, settings, widgetSetting) {
         background: ${settings.colors?.cardsBg || '#FFFFFF'};
         text-align: center;
     `;
-    
+
     const placeholder = document.createElement('div');
     placeholder.textContent = 'Buy X Get Y Widget - Coming Soon';
     placeholder.style.cssText = `
@@ -196,7 +288,7 @@ function renderBxgyWidget(target, settings, widgetSetting) {
         font-size: 16px;
         font-weight: 600;
     `;
-    
+
     container.appendChild(placeholder);
     target.innerHTML = '';
     target.appendChild(container);
@@ -256,14 +348,14 @@ function createBarEl(bar, settings, isSelected = false) {
     const savedAmount = calcSavedAmount(bar);
     const originalPrice = calcOriginalPrice(bar);
     const discountPercent = originalPrice > 0 ? Math.round((savedAmount / originalPrice) * 100) : 0;
-    
+
     // Show calculated savings in description
     if (savedAmount > 0) {
         desc.textContent = `You save ${formatPrice(savedAmount)} (${discountPercent}% off)`;
     } else {
         desc.textContent = bar.description || '';
     }
-    
+
     desc.style.cssText = `
         font-size:${settings.typography?.optionDescSize || 12}px;
         font-weight:${settings.typography?.optionDescWeight || 400};
@@ -401,12 +493,12 @@ function setLineItemPropertiesFromBar(bar) {
         }
         quantityProp.value = String(selectedQuantity);
 
-        // variant-id if provided on gift (hidden via underscore)
-        let variantProp = form.querySelector('input[name="properties[_variant-id]"]');
+        // variant_id if provided on gift (hidden via underscore)
+        let variantProp = form.querySelector('input[name="properties[_variant_id]"]');
         if (!variantProp) {
             variantProp = document.createElement('input');
             variantProp.type = 'hidden';
-            variantProp.name = 'properties[_variant-id]';
+            variantProp.name = 'properties[_variant_id]';
             form.appendChild(variantProp);
         }
         let variantId = gift && (gift.giftVariantId || gift.variantId || gift.variant_id || gift.id);
@@ -415,7 +507,7 @@ function setLineItemPropertiesFromBar(bar) {
             try {
                 const match = String(variantId).match(/ProductVariant\/(\d+)/);
                 if (match && match[1]) variantId = match[1];
-            } catch (e) {}
+            } catch (e) { }
             variantProp.value = String(variantId);
         } else {
             // Clear if no gift
