@@ -1,11 +1,11 @@
 {% render "sales_widget" %}
-{{ 'sales_widget.css' | asset_url | stylesheet_tag }}
-{{ 'sales_widget.js' | asset_url | script_tag }}
+
 <div class="pv-sales-block"></div>
 {% schema %}
 {
   "name": "Sales Widget",
   "target": "section",
-  "stylesheet" : "sales_widget.css"
+   "javascript": "sales_widget.js",
+   "stylesheet": "sales_widget.css"
 }
 {% endschema %}

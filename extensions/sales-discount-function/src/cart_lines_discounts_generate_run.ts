@@ -4,7 +4,7 @@ import {
   DiscountClass,
 } from "../generated/api";
 
-export function cartLinesDiscountsGenerateRun(input) {
+export function cartLinesDiscountsGenerateRun(input: any) {
   if (!input.cart.lines.length) {
     throw new Error("No cart lines found");
   }
@@ -12,12 +12,12 @@ export function cartLinesDiscountsGenerateRun(input) {
   const { orderPercentage, collectionIds, productIds, tiers, all, excludeProductIds } = parseMetafield(
     input.discount.metafield,
   );
-  
+
   const hasOrderDiscountClass = input.discount.discountClasses.includes(
     DiscountClass.Order,
   );
   const hasProductDiscountClass = input.discount.discountClasses.some(
-    (c:any) => c.toLowerCase() === "product"
+    (c: any) => c.toLowerCase() === "product"
   );
 
   if (!hasOrderDiscountClass && !hasProductDiscountClass) {
@@ -33,11 +33,42 @@ export function cartLinesDiscountsGenerateRun(input) {
       if (!line.merchandise || !("product" in line.merchandise)) continue;
 
       const productId = line.merchandise.product.id;
+      const variantId = line.merchandise.id;
+      const quantity = line.quantity;
+      const applicableTier = Array.isArray(tiers)
+        ? tiers
+          .filter(
+            (t) =>
+              typeof t.quantity === "number" &&
+              t.quantity > 0 &&
+              t.quantity <= quantity &&
+              typeof t.priceType === "string" &&
+              ["percentage", "amount_off", "exact_price"].includes(t.priceType) &&
+              typeof t.priceValue === "number" &&
+              t.priceValue >= 0
+          )
+          .sort((a, b) => b.quantity - a.quantity)[0] || null
+        : null;
 
-      // Determine scope
+      // --- 2️⃣ Check if this line is the gift product ---
+      const matchedGiftTier = tiers?.find(
+        (t:any) => t.giftVariantId === variantId
+      );
+
+      if (matchedGiftTier) {
+        // Apply 100% discount to gift products
+        candidates.push({
+          message: `FREE GIFT`,
+          targets: [{ cartLine: { id: line.id } }],
+          value: { percentage: { value: 100 } },
+        });
+        continue;
+      }
+
+      // Determine scope for regular products
       const excluded = excludeProductIds.includes(productId);
       const inScopeByAll = all && !excluded;
-      
+
       const inScopeByProduct = productIds.includes(productId) && !excluded;
       const inScopeByCollection = collectionIds.length > 0 && line.merchandise.product.inAnyCollection && !excluded;
 
@@ -46,24 +77,24 @@ export function cartLinesDiscountsGenerateRun(input) {
       const qty = typeof line.quantity === "number" ? line.quantity : 1;
 
       // Pick best tier
-     const applicable = Array.isArray(tiers)
-  ? tiers
-      .filter((t) => {
-        const isValid =
-          typeof t.quantity === "number" &&
-          t.quantity > 0 &&
-          t.quantity <= qty &&
-          typeof t.priceType === "string" &&
-          ["percentage", "amount_off", "exact_price"].includes(t.priceType) &&
-          typeof t.priceValue === "number" &&
-          t.priceValue >= 0;
+      const applicable = Array.isArray(tiers)
+        ? tiers
+          .filter((t) => {
+            const isValid =
+              typeof t.quantity === "number" &&
+              t.quantity > 0 &&
+              t.quantity <= qty &&
+              typeof t.priceType === "string" &&
+              ["percentage", "amount_off", "exact_price"].includes(t.priceType) &&
+              typeof t.priceValue === "number" &&
+              t.priceValue >= 0;
 
-        return isValid;
-      })
-      .sort((a, b) => b.quantity - a.quantity)[0] || null
-  : null;
+            return isValid;
+          })
+          .sort((a, b) => b.quantity - a.quantity)[0] || null
+        : null;
 
-        if (!applicable) continue;
+      if (!applicable) continue;
 
       if (applicable.priceType === "percentage" && applicable.priceValue > 0) {
         candidates.push({
@@ -90,7 +121,7 @@ export function cartLinesDiscountsGenerateRun(input) {
       operations.push({
         productDiscountsAdd: {
           candidates,
-          selectionStrategy: ProductDiscountSelectionStrategy.First,
+          selectionStrategy: ProductDiscountSelectionStrategy.All,
         },
       });
     }
@@ -99,7 +130,7 @@ export function cartLinesDiscountsGenerateRun(input) {
   return { operations };
 }
 
-function parseMetafield(metafield) {
+function parseMetafield(metafield: any) {
   try {
     const value = JSON.parse(metafield.value);
 

@@ -54,6 +54,7 @@ model DiscountSettings {
   widgetId     Int
   bundleName   String
   discountName String
+  discountCode String?
   discountId    String
   discountLogic Json       // quantity break, rules, etc.
   appliesTo    DiscountTarget

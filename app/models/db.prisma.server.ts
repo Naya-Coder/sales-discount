@@ -187,6 +187,7 @@ export async function updateWidgetSettings(id: string, data: {
 export async function updateDiscountSettings(id: string, data: {
   bundleName: string;
   discountName: string;
+  discountCode?: string;
   visibility: string;
   productIds: string[];
   collectionIds: string[];
@@ -200,6 +201,7 @@ export async function updateDiscountSettings(id: string, data: {
       data: {
         bundleName: data.bundleName,
         discountName: data.discountName,
+        discountCode: data.discountCode,
         appliesTo: data.visibility as any,
         productIds: data.productIds,
         collectionIds: data.collectionIds,
